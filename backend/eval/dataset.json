@@ -1,0 +1,15 @@
+[
+  {"question": "Quanto custa o plano Pro?", "evidence": "R$ 199", "keywords": ["199"], "answerable": true},
+  {"question": "Qual o armazenamento do plano Starter?", "evidence": "5 GB de armazenamento", "keywords": ["5 GB"], "answerable": true},
+  {"question": "Em quantos dias posso pedir reembolso?", "evidence": "7 dias corridos", "keywords": ["7 dias"], "answerable": true},
+  {"question": "Quanto tempo leva a devolução se eu paguei com PIX?", "evidence": "PIX são devolvidos", "keywords": ["5 dias"], "answerable": true},
+  {"question": "Como cancelo a renovação da assinatura?", "evidence": "Cancelar renovação", "keywords": ["Cancelar renovação"], "answerable": true},
+  {"question": "O plano Starter tem backup automático?", "evidence": "Starter não inclui backups", "keywords": ["não"], "answerable": true},
+  {"question": "Por quanto tempo os backups ficam guardados no Enterprise?", "evidence": "90 dias no Enterprise", "keywords": ["90"], "answerable": true},
+  {"question": "Como ativo a autenticação em dois fatores?", "evidence": "Perfil > Segurança", "keywords": ["Segurança"], "answerable": true},
+  {"question": "Qual o SLA de disponibilidade do Enterprise?", "evidence": "99,95%", "keywords": ["99,95"], "answerable": true},
+  {"question": "Em quanto tempo vocês avisam sobre um incidente de segurança?", "evidence": "72 horas", "keywords": ["72"], "answerable": true},
+  {"question": "Qual a capital da França?", "evidence": "", "keywords": [], "answerable": false},
+  {"question": "A Nimbus Cloud tem aplicativo para iPhone?", "evidence": "", "keywords": [], "answerable": false},
+  {"question": "Quem é o CEO da empresa?", "evidence": "", "keywords": [], "answerable": false}
+]

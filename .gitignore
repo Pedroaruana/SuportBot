@@ -25,3 +25,8 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+# Dados locais (indice vetorial, historico, avaliacao)
+data/
+backend/data/
+.pytest_cache/
+.ruff_cache/

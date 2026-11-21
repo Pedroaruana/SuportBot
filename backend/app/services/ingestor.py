@@ -1,22 +1,15 @@
+import hashlib
 import io
-import requests
-from bs4 import BeautifulSoup
-import fitz  # PyMuPDF
 
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_chroma import Chroma
-from langchain.schema import Document
+import fitz  # PyMuPDF
+from bs4 import BeautifulSoup
+from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from app.core.config import settings
-from app.services.embeddings import get_embedding_function
-
-
-def _get_vector_store() -> Chroma:
-    return Chroma(
-        persist_directory=settings.chroma_persist_dir,
-        embedding_function=get_embedding_function(),
-        collection_name="supportbot_docs",
-    )
+from app.core.security import UnsafeUrlError, fetch_public_url
+from app.services import retrieval
+from app.services.store import get_vector_store
 
 
 def _split_documents(docs: list[Document]) -> list[Document]:
@@ -28,62 +21,79 @@ def _split_documents(docs: list[Document]) -> list[Document]:
     return splitter.split_documents(docs)
 
 
-def ingest_pdf(file_bytes: bytes, filename: str) -> dict:
-    """
-    Lê um PDF em memória, extrai o texto por página
-    e armazena os chunks no ChromaDB.
-    """
-    pdf = fitz.open(stream=io.BytesIO(file_bytes), filetype="pdf")
-    docs = []
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
 
+
+def _index(source: str, docs: list[Document], file_hash: str) -> dict:
+    """
+    Indexa evitando duplicatas:
+    - mesmo hash: ignora (status duplicate)
+    - mesma fonte com conteudo novo: substitui os chunks antigos
+    """
+    store = get_vector_store()
+    existing = store._collection.get(where={"source": source}, include=["metadatas"])
+    hashes = {m.get("file_hash") for m in existing["metadatas"]}
+
+    if file_hash in hashes:
+        return {"status": "duplicate", "source": source, "chunks": len(existing["ids"])}
+
+    if existing["ids"]:
+        store._collection.delete(ids=existing["ids"])
+
+    chunks = _split_documents(docs)
+    for i, chunk in enumerate(chunks):
+        chunk.metadata["file_hash"] = file_hash
+        chunk.metadata["chunk_id"] = f"{file_hash[:12]}:{i}"
+
+    store.add_documents(chunks, ids=[c.metadata["chunk_id"] for c in chunks])
+    retrieval.invalidate_bm25()
+    return {
+        "status": "replaced" if existing["ids"] else "success",
+        "source": source,
+        "chunks": len(chunks),
+    }
+
+
+def ingest_pdf(file_bytes: bytes, filename: str) -> dict:
+    """Extrai o texto por pagina e indexa os chunks no ChromaDB."""
+    try:
+        pdf = fitz.open(stream=io.BytesIO(file_bytes), filetype="pdf")
+    except Exception:
+        return {"status": "error", "message": "PDF inválido ou corrompido."}
+
+    docs = []
     for page_num, page in enumerate(pdf):
         text = page.get_text()
         if text.strip():
             docs.append(
                 Document(
                     page_content=text,
-                    metadata={
-                        "source": filename,
-                        "type": "pdf",
-                        "page": page_num + 1,
-                    },
+                    metadata={"source": filename, "type": "pdf", "page": page_num + 1},
                 )
             )
 
     if not docs:
         return {"status": "error", "message": "Nenhum texto encontrado no PDF."}
 
-    chunks = _split_documents(docs)
-    store = _get_vector_store()
-    store.add_documents(chunks)
-
-    return {
-        "status": "success",
-        "source": filename,
-        "pages": len(docs),
-        "chunks": len(chunks),
-    }
+    result = _index(filename, docs, _sha256(file_bytes))
+    result["pages"] = len(docs)
+    return result
 
 
 def ingest_url(url: str) -> dict:
-    """
-    Faz scraping de uma URL, extrai o texto principal
-    e armazena os chunks no ChromaDB.
-    """
+    """Baixa a pagina (com protecao SSRF), extrai o texto principal e indexa."""
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (compatible; SupportBot/1.0)"}
-        response = requests.get(url, headers=headers, timeout=15)
-        response.raise_for_status()
-    except requests.RequestException as e:
+        html = fetch_public_url(url)
+    except UnsafeUrlError as e:
+        return {"status": "error", "message": str(e)}
+    except Exception as e:
         return {"status": "error", "message": f"Falha ao acessar a URL: {e}"}
 
-    soup = BeautifulSoup(response.text, "html.parser")
-
-    # Remove elementos desnecessários
+    soup = BeautifulSoup(html, "html.parser")
     for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
         tag.decompose()
 
-    # Prioriza o conteúdo principal
     main = soup.find("main") or soup.find("article") or soup.find("body")
     text = main.get_text(separator="\n", strip=True) if main else ""
 
@@ -91,24 +101,25 @@ def ingest_url(url: str) -> dict:
         return {"status": "error", "message": "Nenhum conteúdo textual encontrado."}
 
     docs = [Document(page_content=text, metadata={"source": url, "type": "url"})]
-    chunks = _split_documents(docs)
-    store = _get_vector_store()
-    store.add_documents(chunks)
-
-    return {
-        "status": "success",
-        "source": url,
-        "chunks": len(chunks),
-    }
+    return _index(url, docs, _sha256(text.encode("utf-8")))
 
 
 def list_sources() -> list[dict]:
-    """Lista todas as fontes já indexadas."""
-    store = _get_vector_store()
-    collection = store._collection.get(include=["metadatas"])
-    seen = {}
+    """Lista as fontes indexadas com a contagem de chunks."""
+    collection = get_vector_store()._collection.get(include=["metadatas"])
+    seen: dict[str, dict] = {}
     for meta in collection["metadatas"]:
         src = meta.get("source", "desconhecido")
-        if src not in seen:
-            seen[src] = {"source": src, "type": meta.get("type", "?")}
+        entry = seen.setdefault(src, {"source": src, "type": meta.get("type", "?"), "chunks": 0})
+        entry["chunks"] += 1
     return list(seen.values())
+
+
+def delete_source(source: str) -> int:
+    """Remove todos os chunks de uma fonte. Retorna quantos foram removidos."""
+    store = get_vector_store()
+    existing = store._collection.get(where={"source": source})
+    if existing["ids"]:
+        store._collection.delete(ids=existing["ids"])
+        retrieval.invalidate_bm25()
+    return len(existing["ids"])

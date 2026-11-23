@@ -4,7 +4,7 @@ import uuid
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import chat, ingest
+from app.api import analytics, chat, ingest
 from app.core.config import settings
 from app.core.observability import log, metrics, setup_logging
 from app.core.security import require_api_key
@@ -43,6 +43,7 @@ async def access_log(request: Request, call_next):
 
 app.include_router(ingest.router, prefix="/api/ingest", tags=["Ingestão"])
 app.include_router(chat.router, prefix="/api/chat", tags=["Chat"])
+app.include_router(analytics.router, prefix="/api", tags=["Feedback e analytics"])
 
 
 @app.get("/health", tags=["Ops"])

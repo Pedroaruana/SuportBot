@@ -14,7 +14,7 @@ from app.core.config import settings  # noqa: E402
 from app.core.observability import metrics  # noqa: E402
 from app.core.security import limiter  # noqa: E402
 from app.services import embeddings as embeddings_module  # noqa: E402
-from app.services import rag, retrieval  # noqa: E402
+from app.services import llm, rag, retrieval  # noqa: E402
 from app.services.store import reset_store_cache  # noqa: E402
 
 DIM = 256
@@ -64,9 +64,16 @@ def isolated_env(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "sqlite_path", str(tmp_path / "test.db"))
     monkeypatch.setattr(settings, "api_key", "")
     monkeypatch.setattr(settings, "min_relevance", 0.2)
+    monkeypatch.setattr(settings, "pii_mode", "mask")
+    monkeypatch.setattr(settings, "pii_types", "cpf,email")
+    monkeypatch.setattr(settings, "pii_allow_emails", "")
+    monkeypatch.setattr(settings, "injection_mode", "drop")
+    monkeypatch.setattr(settings, "llm_provider", "gemini")
+    monkeypatch.setattr(settings, "llm_model", "")
     monkeypatch.setattr(embeddings_module, "get_embedding_function", lambda: FakeEmbeddings())
     reset_store_cache()
     retrieval.invalidate_bm25()
+    llm.reset_llm_cache()
     limiter.reset()
     metrics.reset()
     yield

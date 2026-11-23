@@ -36,7 +36,7 @@ def test_changed_pdf_replaces_old_chunks(client):
 
 def test_rejects_non_pdf_content(client):
     resp = _upload(client, b"isto nao e um pdf", name="falso.pdf")
-    assert resp.status_code == 400
+    assert resp.status_code == 422
 
 
 def test_rejects_oversized_upload(client, monkeypatch):

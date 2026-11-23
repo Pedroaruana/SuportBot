@@ -13,6 +13,7 @@ from app.core.config import settings
 
 MAX_REDIRECTS = 3
 ALLOWED_CONTENT_TYPES = ("text/html", "text/plain", "application/xhtml+xml")
+SITEMAP_CONTENT_TYPES = ("application/xml", "text/xml", "text/plain")
 
 
 class UnsafeUrlError(ValueError):
@@ -36,7 +37,7 @@ def validate_public_url(url: str) -> None:
             raise UnsafeUrlError("A URL aponta para um endereço não público.")
 
 
-def fetch_public_url(url: str) -> str:
+def fetch_public_url(url: str, accept: tuple[str, ...] = ALLOWED_CONTENT_TYPES) -> str:
     """
     Baixa o HTML seguindo redirects manualmente (cada salto e revalidado),
     com timeout e limite de tamanho.
@@ -61,7 +62,7 @@ def fetch_public_url(url: str) -> str:
 
             resp.raise_for_status()
             ctype = resp.headers.get("Content-Type", "").split(";")[0].strip().lower()
-            if ctype not in ALLOWED_CONTENT_TYPES:
+            if ctype not in accept:
                 raise UnsafeUrlError(f"Tipo de conteúdo não suportado: {ctype or 'desconhecido'}.")
 
             data = bytearray()

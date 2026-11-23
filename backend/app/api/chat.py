@@ -24,6 +24,7 @@ class ChatResponse(BaseModel):
     sources: list[dict]
     session_id: str
     fallback: bool
+    message_id: int
 
 
 @router.post("/", response_model=ChatResponse, summary="Enviar pergunta ao SupportBot")

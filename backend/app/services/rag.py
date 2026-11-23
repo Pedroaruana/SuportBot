@@ -1,13 +1,12 @@
 import time
 from collections.abc import Iterator
-from functools import lru_cache
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.core.config import settings
 from app.core.observability import log, metrics
-from app.services import history, retrieval
+from app.services import analytics, guardrails, history, retrieval
+from app.services.llm import get_llm
 
 FALLBACK_ANSWER = (
     "Não encontrei essa informação nos documentos disponíveis. "
@@ -32,16 +31,6 @@ Histórico:
 Última pergunta: {question}"""
 
 SNIPPET_CHARS = 220
-
-
-@lru_cache(maxsize=1)
-def get_llm() -> ChatGoogleGenerativeAI:
-    return ChatGoogleGenerativeAI(
-        model=settings.llm_model,
-        google_api_key=settings.gemini_api_key,
-        temperature=0.2,
-        convert_system_message_to_human=True,
-    )
 
 
 def _format_history(turns: list[tuple[str, str]]) -> str:
@@ -91,6 +80,12 @@ def generate(question: str, session_id: str) -> Iterator[dict]:
     e devolve a resposta de fallback.
     """
     start = time.perf_counter()
+    injection = guardrails.detect_injection(question)
+    if injection:
+        metrics.record_injection_attempt()
+        log("injection_attempt", session_id=session_id, patterns=injection)
+    safe_question = guardrails.redact(question)
+
     turns = history.get_history(session_id)
     standalone = condense_question(question, turns)
 
@@ -115,15 +110,17 @@ def generate(question: str, session_id: str) -> Iterator[dict]:
         tokens_out = _estimate_tokens("".join(answer_parts))
 
     answer = "".join(answer_parts)
-    history.add_message(session_id, "user", question)
+    history.add_message(session_id, "user", safe_question)
     history.add_message(session_id, "assistant", answer)
+    message_id = analytics.record_interaction(session_id, safe_question, answer, fallback, best)
 
     elapsed = (time.perf_counter() - start) * 1000
     metrics.record_chat(elapsed, tokens_in, tokens_out, fallback)
     log(
         "chat",
         session_id=session_id,
-        standalone=standalone,
+        message_id=message_id,
+        standalone=guardrails.redact(standalone),
         best_score=round(best, 3),
         chunks=len(hits),
         fallback=fallback,
@@ -131,7 +128,7 @@ def generate(question: str, session_id: str) -> Iterator[dict]:
         tokens_out_est=tokens_out,
         ms=round(elapsed, 1),
     )
-    yield {"type": "done", "fallback": fallback}
+    yield {"type": "done", "fallback": fallback, "message_id": message_id}
 
 
 def ask(question: str, session_id: str) -> dict:
@@ -139,6 +136,7 @@ def ask(question: str, session_id: str) -> dict:
     answer: list[str] = []
     sources: list[dict] = []
     fallback = False
+    message_id = 0
     for event in generate(question, session_id):
         if event["type"] == "sources":
             sources = event["sources"]
@@ -146,4 +144,5 @@ def ask(question: str, session_id: str) -> dict:
             answer.append(event["text"])
         elif event["type"] == "done":
             fallback = event["fallback"]
-    return {"answer": "".join(answer), "sources": sources, "fallback": fallback}
+            message_id = event["message_id"]
+    return {"answer": "".join(answer), "sources": sources, "fallback": fallback, "message_id": message_id}

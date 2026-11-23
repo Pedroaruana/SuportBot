@@ -55,6 +55,7 @@ class Metrics:
         self.errors = 0
         self.chat_requests = 0
         self.fallbacks = 0
+        self.injection_attempts = 0
         self.tokens_in = 0
         self.tokens_out = 0
         self.latency_ms: deque[float] = deque(maxlen=1000)
@@ -76,6 +77,10 @@ class Metrics:
             if fallback:
                 self.fallbacks += 1
 
+    def record_injection_attempt(self) -> None:
+        with self._lock:
+            self.injection_attempts += 1
+
     def snapshot(self) -> dict:
         with self._lock:
             chat = list(self.chat_latency_ms)
@@ -88,6 +93,7 @@ class Metrics:
                 "chat": {
                     "requests": self.chat_requests,
                     "fallbacks": self.fallbacks,
+                    "injection_attempts": self.injection_attempts,
                     "latency_ms": {"p50": _percentile(chat, 0.5), "p95": _percentile(chat, 0.95)},
                     "tokens_in": self.tokens_in,
                     "tokens_out": self.tokens_out,

@@ -50,7 +50,9 @@ def test_stream_events(client, fake_llm):
     events = [json.loads(ln[6:]) for ln in lines]
     assert events[0]["type"] == "sources"
     assert [e["text"] for e in events if e["type"] == "token"] == ["Resposta ", "de teste ", "[1]"]
-    assert events[-1] == {"type": "done", "fallback": False}
+    assert events[-1]["type"] == "done"
+    assert events[-1]["fallback"] is False
+    assert events[-1]["message_id"] >= 1
 
 
 def test_validates_input(client):

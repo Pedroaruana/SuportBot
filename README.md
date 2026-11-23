@@ -13,7 +13,7 @@
 ![Docker](https://img.shields.io/badge/Docker-compose-2496ED?logo=docker&logoColor=white&labelColor=555)
 ![License](https://img.shields.io/badge/License-MIT-yellow?labelColor=555)
 
-Chatbot de suporte que responde perguntas com base em PDFs e páginas web da empresa, citando os trechos usados.
+Chatbot de suporte que responde perguntas com base em PDFs, DOCX, Markdown, TXT, páginas web e sitemaps da empresa, citando os trechos usados.
 
 Desenvolvido por **Pedro Aruanã**
 
@@ -33,6 +33,10 @@ Desenvolvido por **Pedro Aruanã**
 - **Streaming (SSE):** resposta token a token no frontend.
 - **Ingestão idempotente:** hash do conteúdo evita duplicatas e reenviar um arquivo alterado substitui os chunks antigos. Fontes podem ser removidas.
 - **Avaliação reproduzível:** dataset com perguntas respondíveis e fora de escopo, comparando busca vetorial pura contra híbrida.
+- **LLM trocável por configuração:** `LLM_PROVIDER` aceita Gemini, OpenAI ou Ollama local, sem mexer no código do pipeline.
+- **Vários formatos:** PDF, DOCX (parágrafos e tabelas), Markdown, TXT, páginas web e sitemaps (inclusive índice de sitemaps).
+- **Guardrails na ingestão:** CPF (validado pelos dígitos) e e-mail são mascarados antes de indexar, e frases com prompt injection são removidas do documento. Cada modo é configurável.
+- **Feedback e analytics:** polegar por resposta, painel com a taxa de perguntas sem resposta, lista agrupada do que os documentos não cobrem e as respostas mal avaliadas.
 - **Segurança e operação:** proteção SSRF, limites de upload, API key, rate limit, logs JSON, `/metrics`, testes e CI.
 
 ## Arquitetura
@@ -40,14 +44,15 @@ Desenvolvido por **Pedro Aruanã**
 ```mermaid
 flowchart LR
   UI[React + TS] -- SSE --> API[FastAPI]
-  API --> H[(SQLite: histórico)]
+  API --> H[(SQLite: histórico, interações, feedback)]
   API --> C[Reescrita da pergunta]
   C --> R{Busca híbrida}
   R --> V[(ChromaDB: vetorial)]
   R --> B[BM25 em memória]
   R -- melhor score < limiar --> F[Fallback sem LLM]
-  R --> L[Gemini: resposta com citações]
-  UP[PDF / URL] --> G[Guarda SSRF e limites] --> I[Chunking + embeddings em lote] --> V
+  R --> L[LLM: Gemini, OpenAI ou Ollama]
+  UI -- polegar --> FB[Feedback e analytics] --> H
+  UP[PDF, DOCX, MD, TXT, URL, sitemap] --> G[Guarda SSRF e limites] --> P[Guardrails: PII e prompt injection] --> I[Chunking + embeddings em lote] --> V
 ```
 
 ## Decisões e trade-offs
@@ -61,6 +66,11 @@ flowchart LR
 | Histórico em SQLite | Sobrevive a restart, sem infraestrutura extra | Para várias instâncias, trocar por Redis ou Postgres |
 | Métricas em memória | Zero dependência | Para várias instâncias, exportar para Prometheus |
 | SSRF validado por DNS a cada redirect | Bloqueia loopback, rede privada e metadados de nuvem | Janela de DNS rebinding, em produção usar proxy de egress |
+| Prompt injection: remover a frase, não o trecho | Em documentos curtos o documento inteiro é um trecho só, e descartá-lo apagaria conteúdo legítimo (erro que o teste real mostrou) | Detecção por padrões, não pega ataques novos ou ofuscados |
+| CPF mascarado só se os dígitos verificadores batem | Evita mascarar protocolos e números aleatórios | Não cobre CNPJ, RG ou cartão por padrão |
+| PII também mascarada em log, histórico e analytics | O painel não vira um depósito de dados pessoais | O chat em si ainda envia a pergunta original ao LLM |
+| Embeddings ficam no Gemini mesmo trocando o LLM | Trocar o modelo de embedding exige reindexar tudo | Quem usa só Ollama ainda precisa da chave do Gemini |
+| Sitemap indexa só o mesmo domínio e em sequência | Evita virar um crawler aberto e respeita o rate limit | Sites grandes demoram, o limite padrão é 20 páginas |
 
 ## Como rodar
 
@@ -114,8 +124,21 @@ Todas as variáveis estão em `backend/.env.example`. As principais:
 | `ALLOWED_ORIGINS` | `http://localhost:5173` | Origens do CORS |
 | `MIN_RELEVANCE` | `0.70` | Similaridade mínima para tentar responder |
 | `RETRIEVER_K` / `FETCH_K` | `4` / `20` | Trechos enviados ao LLM / candidatos por busca |
-| `MAX_UPLOAD_MB` | `10` | Tamanho máximo de PDF |
+| `MAX_UPLOAD_MB` | `10` | Tamanho máximo de arquivo |
 | `RATE_LIMIT_CHAT_PER_MIN` | `20` | Requisições de chat por minuto por IP |
+| `LLM_PROVIDER` | `gemini` | `gemini`, `openai` ou `ollama` |
+| `LLM_MODEL` | vazio | Modelo do provedor. Vazio usa `gemini-2.5-flash-lite`, `gpt-4o-mini` ou `llama3.1` |
+| `PII_MODE` / `PII_TYPES` | `mask` / `cpf,email` | `off`, `mask` ou `block`. Tipos: `cpf`, `email`, `phone` |
+| `PII_ALLOW_EMAILS` | vazio | E-mails ou domínios que não são mascarados (ex.: `suporte@empresa.com,@empresa.com`) |
+| `INJECTION_MODE` | `drop` | `off`, `flag` (só avisa), `drop` (remove as frases) ou `block` (recusa o documento) |
+| `MAX_SITEMAP_URLS` | `20` | Máximo de páginas por sitemap |
+
+Para usar OpenAI ou Ollama, instale os pacotes opcionais e defina o provedor. Esses dois caminhos foram testados só com simulação nos testes, não contra os serviços reais.
+
+```bash
+pip install -r requirements-optional.txt
+# .env: LLM_PROVIDER=ollama e LLM_MODEL=llama3.1   (ou openai + OPENAI_API_KEY)
+```
 
 No frontend, `VITE_API_URL` e `VITE_API_KEY` ficam no bundle. Use `VITE_API_KEY` só em demo, em produção coloque um proxy no servidor.
 
@@ -126,8 +149,13 @@ No frontend, `VITE_API_URL` e `VITE_API_KEY` ficam no bundle. Use `VITE_API_KEY`
 | POST | `/api/chat/stream` | Resposta em streaming (SSE): eventos `sources`, `token`, `done` |
 | POST | `/api/chat/` | Resposta completa em JSON |
 | DELETE | `/api/chat/{session_id}` | Limpa o histórico da sessão |
-| POST | `/api/ingest/pdf` | Indexa um PDF |
+| POST | `/api/ingest/file` | Indexa PDF, DOCX, MD ou TXT (`/api/ingest/pdf` continua como alias) |
 | POST | `/api/ingest/url` | Indexa uma página web |
+| POST | `/api/ingest/sitemap` | Indexa as páginas de um sitemap (mesmo domínio, até `limit`) |
+| POST | `/api/feedback` | Avalia uma resposta (`message_id`, `rating`: `up` ou `down`, `comment` opcional) |
+| GET | `/api/analytics/summary` | Perguntas, taxa de fallback, votos e satisfação |
+| GET | `/api/analytics/unanswered` | Perguntas em fallback, agrupadas e ordenadas por frequência |
+| GET | `/api/analytics/downvoted` | Respostas avaliadas negativamente |
 | GET | `/api/ingest/sources` | Lista as fontes com contagem de chunks |
 | DELETE | `/api/ingest/sources?source=` | Remove uma fonte |
 | GET | `/health`, `/metrics` | Saúde e métricas (latência p50/p95, tokens estimados, fallbacks) |

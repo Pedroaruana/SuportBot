@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react"
 import "./index.css"
 import { ChatView } from "./components/ChatView"
+import { AnalyticsView } from "./components/AnalyticsView"
 import { DocsView } from "./components/DocsView"
 
-type Tab = "chat" | "docs"
+type Tab = "chat" | "docs" | "analytics"
 type Theme = "light" | "dark"
 
 const initialTheme = (): Theme => {
@@ -41,13 +42,18 @@ export default function App() {
             <button className={tab === "docs" ? "tab active" : "tab"} onClick={() => setTab("docs")}>
               Documentos
             </button>
+            <button className={tab === "analytics" ? "tab active" : "tab"} onClick={() => setTab("analytics")}>
+              Analytics
+            </button>
             <button className="tab" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
               {theme === "dark" ? "Claro" : "Escuro"}
             </button>
           </nav>
         </div>
       </header>
-      {tab === "chat" ? <ChatView /> : <DocsView />}
+      {tab === "chat" && <ChatView />}
+      {tab === "docs" && <DocsView />}
+      {tab === "analytics" && <AnalyticsView />}
     </div>
   )
 }

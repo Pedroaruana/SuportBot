@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
-import { clearSession, streamChat } from "../api"
-import type { ChatMessage, StreamEvent } from "../types"
+import { clearSession, sendFeedback, streamChat } from "../api"
+import type { ChatMessage, Rating, StreamEvent } from "../types"
 import { Message } from "./Message"
 
 const WELCOME: ChatMessage = {
@@ -28,7 +28,7 @@ export const ChatView = () => {
   const handleEvent = (event: StreamEvent) => {
     if (event.type === "sources") patchLast((m) => ({ ...m, sources: event.sources }))
     else if (event.type === "token") patchLast((m) => ({ ...m, text: m.text + event.text }))
-    else if (event.type === "done") patchLast((m) => ({ ...m, streaming: false, fallback: event.fallback }))
+    else if (event.type === "done") patchLast((m) => ({ ...m, streaming: false, fallback: event.fallback, messageId: event.message_id }))
     else if (event.type === "error") patchLast((m) => ({ ...m, streaming: false, text: event.message }))
   }
 
@@ -54,6 +54,20 @@ export const ChatView = () => {
     }
   }
 
+  const rate = async (index: number, rating: Rating) => {
+    const target = messages[index]
+    if (!target.messageId) return
+    const previous = target.rating
+    const setRating = (value?: Rating) =>
+      setMessages((prev) => prev.map((m, i) => (i === index ? { ...m, rating: value } : m)))
+    setRating(rating)
+    try {
+      await sendFeedback(target.messageId, rating)
+    } catch {
+      setRating(previous)
+    }
+  }
+
   const reset = async () => {
     await clearSession(sessionId.current).catch(() => undefined)
     sessionId.current = newSessionId()
@@ -64,7 +78,7 @@ export const ChatView = () => {
     <main className="chat-area">
       <div className="messages">
         {messages.map((msg, i) => (
-          <Message key={i} msg={msg} />
+          <Message key={i} msg={msg} onRate={(r) => rate(i, r)} />
         ))}
         <div ref={bottomRef} />
       </div>

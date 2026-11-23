@@ -345,3 +345,35 @@ body {
   cursor: pointer;
 }
 .source-list button.danger:hover:not(:disabled) { color: #b3261e; border-color: #b3261e; }
+
+/* Feedback */
+.feedback { display: flex; gap: 4px; margin-top: 6px; }
+.thumb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px; height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.thumb:hover { color: var(--text); border-color: var(--muted); }
+.thumb.active { color: var(--accent); border-color: var(--accent); background: var(--accent-light); }
+.thumb.active.down { color: #b3261e; border-color: #b3261e; background: transparent; }
+
+/* Analytics */
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 2px solid var(--text); border-bottom: 1px solid var(--border); }
+.stats > div { padding: 14px 4px; }
+.stats dt { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.stats dd { margin-top: 4px; font-family: var(--mono); font-size: 24px; }
+.hint { font-size: 13px; color: var(--muted); margin: -4px 0 12px; }
+.count { font-family: var(--mono); font-size: 12px; color: var(--accent); min-width: 32px; }
+.source-name.question { font-family: var(--font); font-size: 14px; color: var(--text); }
+.downvoted { list-style: none; display: flex; flex-direction: column; gap: 14px; }
+.downvoted li { border-left: 2px solid #b3261e; padding-left: 12px; font-size: 13px; line-height: 1.55; }
+.downvoted .q { font-weight: 600; }
+.downvoted .a { color: var(--muted); margin-top: 2px; }
+.downvoted .c { margin-top: 4px; font-style: italic; }
+@media (max-width: 560px) { .stats { grid-template-columns: repeat(2, 1fr); } }

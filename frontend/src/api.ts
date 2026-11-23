@@ -1,4 +1,12 @@
-import type { IndexedSource, StreamEvent } from "./types"
+import type {
+  AnalyticsSummary,
+  DownvotedAnswer,
+  IndexedSource,
+  IngestResult,
+  Rating,
+  StreamEvent,
+  UnansweredQuestion,
+} from "./types"
 
 const API = import.meta.env.VITE_API_URL ?? "http://localhost:8000/api"
 // Atenção: variáveis VITE_* vão para o bundle. Use só em demo; em produção, proxy no servidor.
@@ -55,12 +63,10 @@ export const fetchSources = async (): Promise<IndexedSource[]> => {
   return res.json()
 }
 
-type IngestResult = { status: string; source: string; chunks: number }
-
-export const uploadPdf = async (file: File): Promise<IngestResult> => {
+export const uploadFile = async (file: File): Promise<IngestResult> => {
   const form = new FormData()
   form.append("file", file)
-  const res = await fetch(`${API}/ingest/pdf`, { method: "POST", headers: authHeaders(), body: form })
+  const res = await fetch(`${API}/ingest/file`, { method: "POST", headers: authHeaders(), body: form })
   if (!res.ok) throw new Error(await errorMessage(res))
   return res.json()
 }
@@ -82,3 +88,32 @@ export const deleteSource = async (source: string): Promise<void> => {
   })
   if (!res.ok) throw new Error(await errorMessage(res))
 }
+
+export const ingestSitemap = async (url: string): Promise<IngestResult> => {
+  const res = await fetch(`${API}/ingest/sitemap`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ url }),
+  })
+  if (!res.ok) throw new Error(await errorMessage(res))
+  return res.json()
+}
+
+export const sendFeedback = async (messageId: number, rating: Rating, comment?: string): Promise<void> => {
+  const res = await fetch(`${API}/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ message_id: messageId, rating, comment: comment || null }),
+  })
+  if (!res.ok) throw new Error(await errorMessage(res))
+}
+
+const getJson = async <T>(path: string): Promise<T> => {
+  const res = await fetch(`${API}${path}`, { headers: authHeaders() })
+  if (!res.ok) throw new Error(await errorMessage(res))
+  return res.json()
+}
+
+export const fetchSummary = () => getJson<AnalyticsSummary>("/analytics/summary")
+export const fetchUnanswered = () => getJson<UnansweredQuestion[]>("/analytics/unanswered")
+export const fetchDownvoted = () => getJson<DownvotedAnswer[]>("/analytics/downvoted")

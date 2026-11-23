@@ -1,6 +1,6 @@
 import { useState } from "react"
 import ReactMarkdown from "react-markdown"
-import type { ChatMessage } from "../types"
+import type { ChatMessage, Rating } from "../types"
 
 const SourceList = ({ sources }: { sources: ChatMessage["sources"] }) => {
   const [open, setOpen] = useState<number | null>(null)
@@ -35,7 +35,26 @@ const SourceList = ({ sources }: { sources: ChatMessage["sources"] }) => {
   )
 }
 
-export const Message = ({ msg }: { msg: ChatMessage }) => (
+const Thumb = ({ down }: { down?: boolean }) => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={down ? { transform: "rotate(180deg)" } : undefined}>
+    <path d="M7 10v11H3V10h4zM7 10l4-8a2 2 0 0 1 2 2v4h6a2 2 0 0 1 2 2.3l-1.4 8A2 2 0 0 1 17.6 21H7" />
+  </svg>
+)
+
+const Feedback = ({ rating, onRate }: { rating?: Rating; onRate: (r: Rating) => void }) => (
+  <div className="feedback" role="group" aria-label="Avaliar resposta">
+    <button className={rating === "up" ? "thumb active" : "thumb"} onClick={() => onRate("up")} title="Resposta útil" aria-pressed={rating === "up"}>
+      <Thumb />
+    </button>
+    <button className={rating === "down" ? "thumb active down" : "thumb"} onClick={() => onRate("down")} title="Não ajudou" aria-pressed={rating === "down"}>
+      <Thumb down />
+    </button>
+  </div>
+)
+
+type Props = { msg: ChatMessage; onRate?: (rating: Rating) => void }
+
+export const Message = ({ msg, onRate }: Props) => (
   <div className={`msg msg-${msg.role}`}>
     <div className={msg.fallback ? "bubble fallback" : "bubble"}>
       {msg.role === "bot" ? (
@@ -54,5 +73,6 @@ export const Message = ({ msg }: { msg: ChatMessage }) => (
       {msg.streaming && msg.text && <span className="cursor" />}
     </div>
     {msg.role === "bot" && <SourceList sources={msg.sources} />}
+    {msg.role === "bot" && msg.messageId && !msg.streaming && onRate && <Feedback rating={msg.rating} onRate={onRate} />}
   </div>
 )
